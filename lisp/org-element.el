@@ -2772,7 +2772,7 @@ CONTENTS is nil."
   (concat "["
 	  (if (org-element-property :parentheticalp citation) "(cite):" "cite:")
 	  (org-element-interpret-data (org-element-property :prefix citation))
-	  (org-element-property :key citation)
+	  "@" (org-element-property :key citation)
 	  (org-element-interpret-data (org-element-property :suffix citation))
 	  "]"))
 
