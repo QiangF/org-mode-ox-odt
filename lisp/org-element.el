@@ -2850,7 +2850,7 @@ Assume point is at the beginning of the reference."
 	    (org-element--parse-objects key-end (point) nil restriction))))
 	reference))))
 
-(defun org-element-citation-reference-interpreter (citation-reference contents)
+(defun org-element-citation-reference-interpreter (citation-reference _contents)
   "Interpret CITATION-REFERENCE object as Org syntax.
 CONTENTS is nil."
   (concat
