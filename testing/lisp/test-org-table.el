@@ -710,7 +710,7 @@ formatter \"%.1f\"."
 
 (ert-deftest test-org-table/org-lookup-all ()
   "Use `org-lookup-all' for several GROUP BY as in SQL and for ranking.
-See also http://orgmode.org/worg/org-tutorials/org-lookups.html ."
+See also URL `https://orgmode.org/worg/org-tutorials/org-lookups.html'."
   (let ((data "
 #+NAME: data
 | Purchase | Product | Shop | Rating |
@@ -1668,14 +1668,20 @@ See also `test-org-table/copy-field'."
       (buffer-string))))
   ;; Sort by time (HH:MM values)
   (should
-   (equal "| 1:00 |\n| 14:00 |\n| 17:00 |\n"
-	  (org-test-with-temp-text "| 14:00 |\n| 17:00 |\n| 1:00 |\n"
+   (equal "| 1:00 |\n| 17:00 |\n| 114:00 |\n"
+	  (org-test-with-temp-text "| 114:00 |\n| 17:00 |\n| 1:00 |\n"
 	    (org-table-sort-lines nil ?t)
 	    (buffer-string))))
   (should
-   (equal "| 17:00 |\n| 14:00 |\n| 1:00 |\n"
-	  (org-test-with-temp-text "| 14:00 |\n| 17:00 |\n| 1:00 |\n"
+   (equal "| 114:00 |\n| 17:00 |\n| 1:00 |\n"
+	  (org-test-with-temp-text "| 114:00 |\n| 17:00 |\n| 1:00 |\n"
 	    (org-table-sort-lines nil ?T)
+	    (buffer-string))))
+  ;; Sort by time (durations)
+  (should
+   (equal "| 1d 3:00 |\n| 28:00 |\n"
+	  (org-test-with-temp-text "| 28:00 |\n| 1d 3:00 |\n"
+	    (org-table-sort-lines nil ?t)
 	    (buffer-string))))
   ;; Sort with custom functions.
   (should
@@ -1745,59 +1751,50 @@ See also `test-org-table/copy-field'."
 	    (buffer-string)))))
 
 (ert-deftest test-org-table/field-formula-outside-table ()
-  "If `org-table-formula-create-columns' is nil, then a formula
-that references an out-of-bounds column should do nothing. If it
-is t, then new columns should be added as needed"
-
-  (let ((org-table-formula-create-columns nil))
-
-    (should-error
-     (org-test-table-target-expect
-      "
+  "Test `org-table-formula-create-columns' variable."
+  ;; Refuse to create column if variable is nil.
+  (should-error
+   (org-test-with-temp-text "
 | 2 |
 | 4 |
 | 8 |
-"
-      "
-| 2 |
-| 4 |
-| 8 |
-"
-      1
-      "#+TBLFM: @1$2=5")
-     :type (list 'error 'user-error)))
-
-  (let ((org-table-formula-create-columns t))
-
-    ;; make sure field formulas work
-    (org-test-table-target-expect
-     "
-| 2 |
-| 4 |
-| 8 |
-"
-     "
+<point>#+TBLFM: @1$2=5"
+     (let ((org-table-formula-create-columns nil))
+       (org-table-calc-current-TBLFM))
+     (buffer-string))
+   :type (list 'error 'user-error))
+  ;; If the variable is non-nil, field formulas and columns formulas
+  ;; can create tables.
+  (should
+   (equal
+    "
 | 2 | 5 |
 | 4 |   |
 | 8 |   |
-"
-     1
-     "#+TBLFM: @1$2=5")
-
-    ;; and make sure column formulas work too
-    (org-test-table-target-expect
-     "
+#+TBLFM: @1$2=5"
+    (org-test-with-temp-text "
 | 2 |
 | 4 |
 | 8 |
-"
-     "
+<point>#+TBLFM: @1$2=5"
+      (let ((org-table-formula-create-columns t))
+	(org-table-calc-current-TBLFM))
+      (buffer-string))))
+  (should
+   (equal
+    "
 | 2 |   | 15 |
 | 4 |   | 15 |
 | 8 |   | 15 |
-"
-     1
-     "#+TBLFM: $3=15")))
+#+TBLFM: $3=15"
+    (org-test-with-temp-text "
+| 2 |
+| 4 |
+| 8 |
+<point>#+TBLFM: $3=15"
+      (let ((org-table-formula-create-columns t))
+	(org-table-calc-current-TBLFM))
+      (buffer-string)))))
 
 (ert-deftest test-org-table/duration ()
   "Test durations in table formulas."
@@ -1899,6 +1896,27 @@ is t, then new columns should be added as needed"
 <point>#+TBLFM: @2$3=$name"
       (org-table-calc-current-TBLFM)
       (buffer-string)))))
+
+(ert-deftest test-org-table/formula-priority ()
+  "Test field formula priority over column formula."
+  ;; Field formulas bind stronger than column formulas.
+  (should
+   (equal
+    "| 1 |  3 |\n| 2 | 99 |\n"
+    (org-test-with-temp-text
+	"| 1 |   |\n| 2 |   |\n<point>#+tblfm: $2=3*$1::@2$2=99"
+      (org-table-calc-current-TBLFM)
+      (buffer-substring-no-properties (point-min) (point)))))
+  ;; When field formula is removed, table formulas is applied again.
+  (should
+   (equal
+    "| 1 | 3 |\n| 2 | 6 |\n"
+    (org-test-with-temp-text
+	"| 1 |   |\n| 2 |   |\n#+tblfm: $2=3*$1<point>::@2$2=99"
+      (org-table-calc-current-TBLFM)
+      (delete-region (point) (line-end-position))
+      (org-table-calc-current-TBLFM)
+      (buffer-substring-no-properties (point-min) (line-beginning-position))))))
 
 (ert-deftest test-org-table/tab-indent ()
   "Test named fields with tab indentation."
@@ -2099,6 +2117,45 @@ is t, then new columns should be added as needed"
     (org-test-with-temp-text "| a<point> |\n|---|\n| b |"
       (let ((org-table-tab-jumps-over-hlines nil)) (org-table-next-field))
       (buffer-string)))))
+
+(ert-deftest test-org-table/previous-field ()
+  "Test `org-table-previous-field' specifications."
+  ;; Regular tests.
+  (should
+   (eq ?a
+       (org-test-with-temp-text "| a | <point>b |"
+	 (org-table-previous-field)
+	 (char-after))))
+  (should
+   (eq ?a
+       (org-test-with-temp-text "| a |\n| <point>b |"
+	 (org-table-previous-field)
+	 (char-after))))
+  ;; Find previous field across horizontal rules.
+  (should
+   (eq ?a
+       (org-test-with-temp-text "| a |\n|---|\n| <point>b |"
+	 (org-table-previous-field)
+	 (char-after))))
+  ;; When called on a horizontal rule, find previous data field.
+  (should
+   (eq ?b
+       (org-test-with-temp-text "| a | b |\n|---+-<point>--|"
+	 (org-table-previous-field)
+	 (char-after))))
+  ;; Error when at first field.  Make sure to preserve original
+  ;; position.
+  (should-error
+   (org-test-with-temp-text "| <point> a|"
+     (org-table-previous-field)))
+  (should-error
+   (org-test-with-temp-text "|---|\n| <point>a |"
+     (org-table-previous-field)))
+  (should
+   (eq ?a
+       (org-test-with-temp-text "|---|\n| <point>a |"
+	 (ignore-errors (org-table-previous-field))
+	 (char-after)))))
 
 
 

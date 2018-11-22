@@ -43,7 +43,7 @@ BTEST_POST  =
               # -L <path-to>/ert      # needed for Emacs23, Emacs24 has ert built in
               # -L <path-to>/ess      # needed for running R tests
               # -L <path-to>/htmlize  # need at least version 1.34 for source code formatting
-BTEST_OB_LANGUAGES = awk C fortran maxima lilypond octave perl python
+BTEST_OB_LANGUAGES = awk C fortran maxima lilypond octave perl python vala
               # R                     # requires ESS to be installed and configured
               # ruby                  # requires inf-ruby to be installed and configured
 # extra packages to require for testing
@@ -79,7 +79,7 @@ BTEST = $(BATCH) $(BTEST_INIT) \
 	  $(foreach req,$(BTEST_EXTRA),$(req-extra)) \
 	  --eval '(org-test-run-batch-tests org-test-select-re)'
 
-# Running a plain emacs with no config and this Org-mode loaded.  This
+# Running a plain emacs with no config and this Org mode loaded.  This
 # should be useful for manual testing and verification of problems.
 NOBATCH = $(EMACSQ) $(BTEST_INIT) -l org -f org-version
 

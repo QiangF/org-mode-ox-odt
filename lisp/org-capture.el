@@ -1,10 +1,10 @@
 ;;; org-capture.el --- Fast note taking in Org       -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2010-2017 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2018 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten at orgmode dot org>
 ;; Keywords: outlines, hypermedia, calendar, wp
-;; Homepage: http://orgmode.org
+;; Homepage: https://orgmode.org
 ;;
 ;; This file is part of GNU Emacs.
 ;;
@@ -19,7 +19,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
 ;;; Commentary:
@@ -51,8 +51,8 @@
 (require 'org)
 
 (declare-function org-at-encrypted-entry-p "org-crypt" ())
-(declare-function org-datetree-find-date-create "org-datetree"
-		  (date &optional keep-restriction))
+(declare-function org-clock-update-mode-line "org-clock" (&optional refresh))
+(declare-function org-datetree-find-date-create "org-datetree" (date &optional keep-restriction))
 (declare-function org-decrypt-entry "org-crypt" ())
 (declare-function org-encrypt-entry "org-crypt" ())
 (declare-function org-table-analyze "org-table" ())
@@ -78,6 +78,12 @@
 
 (defvar org-capture-is-refiling nil
   "Non-nil when capture process is refiling an entry.")
+
+(defvar org-capture--prompt-history-table (make-hash-table :test #'equal)
+  "Hash table for all history lists per prompt.")
+
+(defvar org-capture--prompt-history nil
+  "History list for prompt placeholders.")
 
 (defgroup org-capture nil
   "Options concerning capturing new entries."
@@ -273,8 +279,10 @@ be replaced with content and expanded:
               happens after expanding non-interactive %-escapes, those can
               be used to fill the expression.
   %<...>      The result of format-time-string on the ... format specification.
-  %t          Time stamp, date only.
-  %T          Time stamp with date and time.
+  %t          Time stamp, date only.  The time stamp is the current time,
+              except when called from agendas with `\\[org-agenda-capture]' or
+              with `org-capture-use-agenda-date' set.
+  %T          Time stamp as above, with date and time.
   %u, %U      Like the above, but inactive time stamps.
   %i          Initial content, copied from the active region.  If %i is
               indented, the entire inserted text will be indented as well.
@@ -292,7 +300,8 @@ be replaced with content and expanded:
   %^g         Prompt for tags, with completion on tags in target file.
   %^G         Prompt for tags, with completion on all tags in all agenda files.
   %^t         Like %t, but prompt for date.  Similarly %^T, %^u, %^U.
-              You may define a prompt like: %^{Please specify birthday}t
+              You may define a prompt like: %^{Please specify birthday}t.
+              The default date is that of %t, see above.
   %^C         Interactive selection of which kill or clip to use.
   %^L         Like %^C, but insert as link.
   %^{prop}p   Prompt the user for a value for property `prop'.
@@ -532,8 +541,8 @@ not-in-buffer: command not displayed in matching buffers
 If you define several checks, the agenda command will be
 accessible if there is at least one valid check.
 
-You can also bind a key to another agenda custom command
-depending on contextual rules.
+You can also bind a key to another capture template depending on
+contextual rules.
 
     \\='((\"c\" \"d\" ((in-mode . \"message-mode\"))))
 
@@ -715,25 +724,26 @@ captured item after finalizing."
 
   ;; Did we start the clock in this capture buffer?
   (when (and org-capture-clock-was-started
-	     org-clock-marker (marker-buffer org-clock-marker)
-	     (equal (marker-buffer org-clock-marker) (buffer-base-buffer))
-	     (> org-clock-marker (point-min))
+	     org-clock-marker
+	     (eq (marker-buffer org-clock-marker) (buffer-base-buffer))
+	     (>= org-clock-marker (point-min))
 	     (< org-clock-marker (point-max)))
-    ;; Looks like the clock we started is still running.  Clock out.
-    (when (not org-capture-clock-keep) (let (org-log-note-clock-out) (org-clock-out)))
-    (when (and (not org-capture-clock-keep)
-	       (org-capture-get :clock-resume 'local)
-	       (markerp (org-capture-get :interrupted-clock 'local))
-	       (buffer-live-p (marker-buffer
-			       (org-capture-get :interrupted-clock 'local))))
-      (let ((clock-in-task (org-capture-get :interrupted-clock 'local)))
-	(org-with-point-at clock-in-task
-	  (org-clock-in)))
-      (message "Interrupted clock has been resumed")))
+    ;; Looks like the clock we started is still running.
+    (if org-capture-clock-keep
+	;; User may have completed clocked heading from the template.
+	;; Refresh clock mode line.
+	(org-clock-update-mode-line t)
+      ;; Clock out.  Possibly resume interrupted clock.
+      (let (org-log-note-clock-out) (org-clock-out))
+      (when (and (org-capture-get :clock-resume 'local)
+		 (markerp (org-capture-get :interrupted-clock 'local))
+		 (buffer-live-p (marker-buffer
+				 (org-capture-get :interrupted-clock 'local))))
+	(let ((clock-in-task (org-capture-get :interrupted-clock 'local)))
+	  (org-with-point-at clock-in-task (org-clock-in)))
+	(message "Interrupted clock has been resumed"))))
 
-  (let ((beg (point-min))
-	(end (point-max))
-	(abort-note nil))
+  (let ((abort-note nil))
     ;; Store the size of the capture buffer
     (org-capture-put :captured-entry-size (- (point-max) (point-min)))
     (widen)
@@ -741,16 +751,11 @@ captured item after finalizing."
     (org-capture-put :insertion-point (point))
 
     (if org-note-abort
-	(let ((m1 (org-capture-get :begin-marker 'local))
-	      (m2 (org-capture-get :end-marker 'local)))
-	  (if (and m1 m2 (= m1 beg) (= m2 end))
-	      (progn
-		(setq m2 (if (cdr (assq 'heading org-blank-before-new-entry))
-			     m2 (1+ m2))
-		      m2 (if (< (point-max) m2) (point-max) m2))
-		(setq abort-note 'clean)
-		(kill-region m1 m2))
-	    (setq abort-note 'dirty)))
+	(let ((beg (org-capture-get :begin-marker 'local))
+	      (end (org-capture-get :end-marker 'local)))
+	  (if (not (and beg end)) (setq abort-note 'dirty)
+	    (setq abort-note t)
+	    (org-with-wide-buffer (kill-region beg end))))
 
       ;; Postprocessing:  Update Statistics cookies, do the sorting
       (when (derived-mode-p 'org-mode)
@@ -844,13 +849,17 @@ for `entry'-type templates"))
   (let* ((base (or (buffer-base-buffer) (current-buffer)))
 	 (pos (make-marker))
 	 (org-capture-is-refiling t)
-	 (kill-buffer (org-capture-get :kill-buffer 'local)))
+	 (kill-buffer (org-capture-get :kill-buffer 'local))
+	 (jump-to-captured (org-capture-get :jump-to-captured 'local)))
     ;; Since `org-capture-finalize' may alter buffer contents (e.g.,
     ;; empty lines) around entry, use a marker to refer to the
     ;; headline to be refiled.  Place the marker in the base buffer,
     ;; as the current indirect one is going to be killed.
     (set-marker pos (save-excursion (org-back-to-heading t) (point)) base)
-    (org-capture-put :kill-buffer nil)
+    ;; `org-capture-finalize' calls `org-capture-goto-last-stored' too
+    ;; early.  We want to wait for the refiling to be over, so we
+    ;; control when the latter function is called.
+    (org-capture-put :kill-buffer nil :jump-to-captured nil)
     (unwind-protect
 	(progn
 	  (org-capture-finalize)
@@ -859,7 +868,8 @@ for `entry'-type templates"))
 	      (org-with-wide-buffer
 	       (goto-char pos)
 	       (call-interactively 'org-refile))))
-	  (when kill-buffer (kill-buffer base)))
+	  (when kill-buffer (kill-buffer base))
+	  (when jump-to-captured (org-capture-goto-last-stored)))
       (set-marker pos nil))))
 
 (defun org-capture-kill ()
@@ -913,18 +923,24 @@ Store them in the capture property list."
 	   (_ (error "Cannot find target ID \"%s\"" id))))
 	(`(file+headline ,path ,headline)
 	 (set-buffer (org-capture-target-buffer path))
+	 ;; Org expects the target file to be in Org mode, otherwise
+	 ;; it throws an error.  However, the default notes files
+	 ;; should work out of the box.  In this case, we switch it to
+	 ;; Org mode.
 	 (unless (derived-mode-p 'org-mode)
-	   (error "Target buffer \"%s\" for file+headline not in Org mode"
-		  (current-buffer)))
+	   (org-display-warning
+	    (format "Capture requirement: switching buffer %S to Org mode"
+		    (current-buffer)))
+	   (org-mode))
 	 (org-capture-put-target-region-and-position)
 	 (widen)
 	 (goto-char (point-min))
 	 (if (re-search-forward (format org-complex-heading-regexp-format
 					(regexp-quote headline))
 				nil t)
-	     (goto-char (line-beginning-position))
+	     (beginning-of-line)
 	   (goto-char (point-max))
-	   (or (bolp) (insert "\n"))
+	   (unless (bolp) (insert "\n"))
 	   (insert "* " headline "\n")
 	   (beginning-of-line 0)))
 	(`(file+olp ,path . ,outline-path)
@@ -987,7 +1003,7 @@ Store them in the capture property list."
 			 ;; Use 00:00 when no time is given for another
 			 ;; date than today?
 			 (apply #'encode-time
-				(append '(0 0 0)
+				(append `(0 0 ,org-extend-today-until)
 					(cl-cdddr (decode-time prompt-time)))))
 			((string-match "\\([^ ]+\\)--?[^ ]+[ ]+\\(.*\\)"
 				       org-read-date-final-answer)
@@ -1089,7 +1105,7 @@ may have been stored before."
 (defun org-capture-place-entry ()
   "Place the template as a new Org entry."
   (let ((reversed? (org-capture-get :prepend))
-	level)
+	(level 1))
     (when (org-capture-get :exact-position)
       (goto-char (org-capture-get :exact-position)))
     (cond
@@ -1098,7 +1114,7 @@ may have been stored before."
       (setq level (org-get-valid-level
 		   (if (org-at-heading-p) (org-outline-level) 1)
 		   1))
-      (if reversed? (outline-next-heading) (org-end-of-subtree t)))
+      (if reversed? (outline-next-heading) (org-end-of-subtree t t)))
      ;; Insert as a top-level entry at the beginning of the file.
      (reversed?
       (goto-char (point-min))
@@ -1303,8 +1319,8 @@ Of course, if exact position has been required, just put it there."
 
 (defun org-capture-mark-kill-region (beg end)
   "Mark the region that will have to be killed when aborting capture."
-  (let ((m1 (move-marker (make-marker) beg))
-	(m2 (move-marker (make-marker) end)))
+  (let ((m1 (copy-marker beg))
+	(m2 (copy-marker end t)))
     (org-capture-put :begin-marker m1)
     (org-capture-put :end-marker m2)))
 
@@ -1584,7 +1600,8 @@ The template may still contain \"%?\" for cursor positioning."
 	 (v-c (and kill-ring (current-kill 0)))
 	 (v-x (or (org-get-x-clipboard 'PRIMARY)
 		  (org-get-x-clipboard 'CLIPBOARD)
-		  (org-get-x-clipboard 'SECONDARY)))
+		  (org-get-x-clipboard 'SECONDARY)
+		  ""))			;ensure it is a string
 	 ;; `initial' and `annotation' might have been passed.  But if
 	 ;; the property list has them, we prefer those values.
 	 (v-i (or (plist-get org-store-link-plist :initial)
@@ -1779,24 +1796,33 @@ The template may still contain \"%?\" for cursor positioning."
 			 (_ (error "Invalid `org-capture--clipboards' value: %S"
 				   org-capture--clipboards)))))
 		    ("p" (org-set-property prompt nil))
-		    ((guard key)
+		    ((or "t" "T" "u" "U")
 		     ;; These are the date/time related ones.
 		     (let* ((upcase? (equal (upcase key) key))
-			    (org-time-was-given upcase?)
-			    (org-end-time-was-given)
+			    (org-end-time-was-given nil)
 			    (time (org-read-date upcase? t nil prompt)))
 		       (org-insert-time-stamp
-			time org-time-was-given
+			time (or org-time-was-given upcase?)
 			(member key '("u" "U"))
 			nil nil (list org-end-time-was-given))))
-		    (_
+		    (`nil
+		     ;; Load history list for current prompt.
+		     (setq org-capture--prompt-history
+			   (gethash prompt org-capture--prompt-history-table))
 		     (push (org-completing-read
 			    (concat (or prompt "Enter string")
 				    (and default (format " [%s]" default))
 				    ": ")
-			    completions nil nil nil nil default)
+			    completions
+			    nil nil nil 'org-capture--prompt-history default)
 			   strings)
-		     (insert (car strings)))))))))
+		     (insert (car strings))
+		     ;; Save updated history list for current prompt.
+		     (puthash prompt org-capture--prompt-history
+			      org-capture--prompt-history-table))
+		    (_
+		     (error "Unknown template placeholder: \"%%^%s\""
+			    key))))))))
 
 	;; Replace %n escapes with nth %^{...} string.
 	(setq strings (nreverse strings))

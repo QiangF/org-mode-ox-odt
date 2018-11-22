@@ -1,6 +1,6 @@
 ;;; org-macro.el --- Macro Replacement Code for Org  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2013-2017 Free Software Foundation, Inc.
+;; Copyright (C) 2013-2018 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <n.goaziou@gmail.com>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -130,7 +130,7 @@ Templates are stored in buffer-local variable
 function installs the following ones: \"property\",
 \"time\". and, if the buffer is associated to a file,
 \"input-file\" and \"modification-time\"."
-  (let* ((templates (org-macro--collect-macros))
+  (let* ((templates nil)
 	 (update-templates
 	  (lambda (cell)
 	    (let ((old-template (assoc (car cell) templates)))
@@ -164,7 +164,7 @@ function installs the following ones: \"property\",
     (org-macro--counter-initialize)
     (funcall update-templates
 	     (cons "n" "(eval (org-macro--counter-increment \"$1\" \"$2\"))"))
-    (setq org-macro-templates templates)))
+    (setq org-macro-templates (nconc (org-macro--collect-macros) templates))))
 
 (defun org-macro-expand (macro templates)
   "Return expanded MACRO, as a string.
@@ -201,56 +201,54 @@ found in the buffer with no definition in TEMPLATES.
 
 Optional argument KEYWORDS, when non-nil is a list of keywords,
 as strings, where macro expansion is allowed."
-  (save-excursion
-    (goto-char (point-min))
-    (let ((properties-regexp
-	   (format "\\`EXPORT_%s\\+?\\'" (regexp-opt keywords)))
-	  record)
-      (while (re-search-forward "{{{[-A-Za-z0-9_]" nil t)
-	(unless (save-match-data (org-in-commented-heading-p))
-	  (let* ((datum (save-match-data (org-element-context)))
-		 (type (org-element-type datum))
-		 (macro
-		  (cond
-		   ((eq type 'macro) datum)
-		   ;; In parsed keywords and associated node
-		   ;; properties, force macro recognition.
-		   ((or (and (eq type 'keyword)
-			     (member (org-element-property :key datum)
-				     keywords))
-			(and (eq type 'node-property)
-			     (string-match-p properties-regexp
-					     (org-element-property :key
-								   datum))))
-		    (save-excursion
-		      (goto-char (match-beginning 0))
-		      (org-element-macro-parser))))))
-	    (when macro
-	      (let* ((value (org-macro-expand macro templates))
-		     (begin (org-element-property :begin macro))
-		     (signature (list begin
-				      macro
-				      (org-element-property :args macro))))
-		;; Avoid circular dependencies by checking if the same
-		;; macro with the same arguments is expanded at the
-		;; same position twice.
-		(cond ((member signature record)
-		       (error "Circular macro expansion: %s"
-			      (org-element-property :key macro)))
-		      (value
-		       (push signature record)
-		       (delete-region
-			begin
-			;; Preserve white spaces after the macro.
-			(progn (goto-char (org-element-property :end macro))
-			       (skip-chars-backward " \t")
-			       (point)))
-		       ;; Leave point before replacement in case of
-		       ;; recursive expansions.
-		       (save-excursion (insert value)))
-		      (finalize
-		       (error "Undefined Org macro: %s; aborting"
-			      (org-element-property :key macro))))))))))))
+  (org-with-wide-buffer
+   (goto-char (point-min))
+   (let ((properties-regexp (format "\\`EXPORT_%s\\+?\\'"
+				    (regexp-opt keywords)))
+	 record)
+     (while (re-search-forward "{{{[-A-Za-z0-9_]" nil t)
+       (unless (save-match-data (org-in-commented-heading-p))
+	 (let* ((datum (save-match-data (org-element-context)))
+		(type (org-element-type datum))
+		(macro
+		 (cond
+		  ((eq type 'macro) datum)
+		  ;; In parsed keywords and associated node
+		  ;; properties, force macro recognition.
+		  ((or (and (eq type 'keyword)
+			    (member (org-element-property :key datum) keywords))
+		       (and (eq type 'node-property)
+			    (string-match-p properties-regexp
+					    (org-element-property :key datum))))
+		   (save-excursion
+		     (goto-char (match-beginning 0))
+		     (org-element-macro-parser))))))
+	   (when macro
+	     (let* ((value (org-macro-expand macro templates))
+		    (begin (org-element-property :begin macro))
+		    (signature (list begin
+				     macro
+				     (org-element-property :args macro))))
+	       ;; Avoid circular dependencies by checking if the same
+	       ;; macro with the same arguments is expanded at the
+	       ;; same position twice.
+	       (cond ((member signature record)
+		      (error "Circular macro expansion: %s"
+			     (org-element-property :key macro)))
+		     (value
+		      (push signature record)
+		      (delete-region
+		       begin
+		       ;; Preserve white spaces after the macro.
+		       (progn (goto-char (org-element-property :end macro))
+			      (skip-chars-backward " \t")
+			      (point)))
+		      ;; Leave point before replacement in case of
+		      ;; recursive expansions.
+		      (save-excursion (insert value)))
+		     (finalize
+		      (error "Undefined Org macro: %s; aborting"
+			     (org-element-property :key macro))))))))))))
 
 (defun org-macro-escape-arguments (&rest args)
   "Build macro's arguments string from ARGS.

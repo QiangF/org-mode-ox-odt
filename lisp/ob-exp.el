@@ -1,11 +1,11 @@
 ;;; ob-exp.el --- Exportation of Babel Source Blocks -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009-2017 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2018 Free Software Foundation, Inc.
 
 ;; Authors: Eric Schulte
 ;;	Dan Davison
 ;; Keywords: literate programming, reproducible research
-;; Homepage: http://orgmode.org
+;; Homepage: https://orgmode.org
 
 ;; This file is part of GNU Emacs.
 
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Code:
 (require 'ob-core)
@@ -41,14 +41,12 @@
 (defcustom org-export-use-babel t
   "Switch controlling code evaluation and header processing during export.
 When set to nil no code will be evaluated as part of the export
-process and no header arguments will be obeyed.  When set to
-`inline-only', only inline code blocks will be executed.  Users
-who wish to avoid evaluating code on export should use the header
-argument `:eval never-export'."
+process and no header arguments will be obeyed.  Users who wish
+to avoid evaluating code on export should use the header argument
+`:eval never-export'."
   :group 'org-babel
   :version "24.1"
   :type '(choice (const :tag "Never" nil)
-		 (const :tag "Only inline code" inline-only)
 		 (const :tag "Always" t))
   :safe #'null)
 
@@ -60,9 +58,13 @@ returned is the value of the last form in BODY.  Assume that
 point is at the beginning of the Babel block."
   (declare (indent 1) (debug body))
   `(let ((source (get-text-property (point) 'org-reference)))
-     (with-current-buffer org-babel-exp-reference-buffer
+     ;; Source blocks created during export process (e.g., by other
+     ;; source blocks) are not referenced.  In this case, do not move
+     ;; point at all.
+     (with-current-buffer (if source org-babel-exp-reference-buffer
+			    (current-buffer))
        (org-with-wide-buffer
-	(goto-char source)
+	(when source (goto-char source))
 	,@body))))
 
 (defun org-babel-exp-src-block ()
@@ -132,9 +134,7 @@ this template."
   (when org-export-use-babel
     (save-window-excursion
       (let ((case-fold-search t)
-	    (regexp (if (eq org-export-use-babel 'inline-only)
-			"\\(call\\|src\\)_"
-		      "\\(call\\|src\\)_\\|^[ \t]*#\\+\\(BEGIN_SRC\\|CALL:\\)"))
+	    (regexp "\\(call\\|src\\)_\\|^[ \t]*#\\+\\(BEGIN_SRC\\|CALL:\\)")
 	    ;; Get a pristine copy of current buffer so Babel
 	    ;; references are properly resolved and source block
 	    ;; context is preserved.

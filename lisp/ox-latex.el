@@ -1,6 +1,6 @@
 ;;; ox-latex.el --- LaTeX Back-End for Org Export Engine -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2011-2017 Free Software Foundation, Inc.
+;; Copyright (C) 2011-2018 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <n.goaziou at gmail dot com>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -18,7 +18,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
@@ -865,7 +865,7 @@ The function should return the string to be exported.
 
 The default function simply returns the value of CONTENTS."
   :group 'org-export-latex
-  :version "24.4"
+  :version "26.1"
   :package-version '(Org . "8.3")
   :type 'function)
 
@@ -920,15 +920,14 @@ using customize, or with
   (add-to-list \\='org-latex-packages-alist \\='(\"newfloat\" \"minted\"))
 
 In addition, it is necessary to install pygments
-\(http://pygments.org), and to configure the variable
+\(URL `http://pygments.org>'), and to configure the variable
 `org-latex-pdf-process' so that the -shell-escape option is
 passed to pdflatex.
 
 The minted choice has possible repercussions on the preview of
 latex fragments (see `org-preview-latex-fragment').  If you run
 into previewing problems, please consult
-
-  http://orgmode.org/worg/org-tutorials/org-latex-preview.html"
+URL `https://orgmode.org/worg/org-tutorials/org-latex-preview.html'."
   :group 'org-export-latex
   :type '(choice
 	  (const :tag "Use listings" t)
@@ -956,7 +955,7 @@ parameter for the listings package.  If the mode name and the
 listings name are the same, the language does not need an entry
 in this list - but it does not hurt if it is present."
   :group 'org-export-latex
-  :version "24.4"
+  :version "26.1"
   :package-version '(Org . "8.3")
   :type '(repeat
 	  (list
@@ -1719,7 +1718,7 @@ holding export options."
      ;; Table of contents.
      (let ((depth (plist-get info :with-toc)))
        (when depth
-	 (concat (when (wholenump depth)
+	 (concat (when (integerp depth)
 		   (format "\\setcounter{tocdepth}{%d}\n" depth))
 		 (plist-get info :latex-toc-command))))
      ;; Document's body.
@@ -2125,7 +2124,7 @@ holding contextual information."
 
 (defun org-latex-format-inlinetask-default-function
     (todo _todo-type priority title tags contents _info)
-  "Default format function for a inlinetasks.
+  "Default format function for inlinetasks.
 See `org-latex-format-inlinetask-function' for details."
   (let ((full-title
 	 (concat (when todo (format "\\textbf{\\textsf{\\textsc{%s}}} " todo))
@@ -2180,19 +2179,16 @@ contextual information."
 			 (nth (1- level) '("i" "ii" "iii" "iv"))
 			 (1- count)))))
 	 (checkbox (cl-case (org-element-property :checkbox item)
-		     (on "$\\boxtimes$ ")
-		     (off "$\\square$ ")
-		     (trans "$\\boxminus$ ")))
+		     (on "$\\boxtimes$")
+		     (off "$\\square$")
+		     (trans "$\\boxminus$")))
 	 (tag (let ((tag (org-element-property :tag item)))
-		;; Check-boxes must belong to the tag.
-		(and tag (format "[{%s}] "
-				 (concat checkbox
-					 (org-export-data tag info)))))))
+		(and tag (org-export-data tag info)))))
     (concat counter
 	    "\\item"
 	    (cond
-	     (tag)
-	     (checkbox (concat " " checkbox))
+	     ((and checkbox tag) (format "[{%s %s}] " checkbox tag))
+	     ((or checkbox tag) (format "[{%s}] " (or checkbox tag)))
 	     ;; Without a tag or a check-box, if CONTENTS starts with
 	     ;; an opening square bracket, add "\relax" to "\item",
 	     ;; unless the brackets comes from an initial export

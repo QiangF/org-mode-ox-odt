@@ -1,7 +1,7 @@
 ;;; ob-sclang.el --- SCLang support for Org-mode Babel
 ;;; -*- coding: utf-8 -*-
 
-;; Copyright (C) 2017 Free Software Foundation, Inc.
+;; Copyright (C) 2017-2018 Free Software Foundation, Inc.
 
 ;; Authors: stardiviner <numbchild@gmail.com>
 ;; Package-Version: 0.1
@@ -24,7 +24,7 @@
 
 ;;; Commentary:
 
-;; `ob-sclang' requires `sclang-interp' from SuperCollider.
+;; `ob-sclang' requires `sclang' from SuperCollider.
 ;; Usually SuperCollider dependencies for Emacs are at /usr/share/emacs/site-lisp/SuperCollider/
 ;; You can install SuperCollider following this article:
 ;; https://github.com/supercollider/supercollider#building-the-source-code
@@ -60,7 +60,7 @@
 (require 'org)
 (require 'ob)
 
-(require 'sclang-interp)
+(require 'sclang)
 
 (defgroup ob-sclang nil
   "org-mode blocks for SuperCollider SCLang."
@@ -81,9 +81,9 @@
 	;; TODO: temporary can't find way to let sclang output to stdout for org-babel.
         (:output . "none")))
 
-;;;###autoload
-(with-eval-after-load "org"
-  (add-to-list 'org-src-lang-modes '("sclang" . sclang)))
+(eval-after-load "org"
+  '(progn
+     (add-to-list 'org-src-lang-modes '("sclang" . sclang))))
 
 ;;; ----------------------------------------------------------------------------
 

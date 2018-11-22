@@ -1,6 +1,6 @@
 ;;; test-ob-emacs-lisp.el
 
-;; Copyright (c) 2012-2017 Free Software Foundation, Inc.
+;; Copyright (c) 2012-2018 Free Software Foundation, Inc.
 ;; Authors: Eric Schulte, Martyn Jago
 
 ;; This file is not part of GNU Emacs.
@@ -64,17 +64,17 @@
 	     (buffer-substring-no-properties (point-at-bol) (point-at-eol))))))
 
 (ert-deftest ob-emacs-lisp/commented-last-block-line ()
-  (org-test-with-temp-text-in-file "
+  (should
+   (string= ": 2"
+	    (org-test-with-temp-text-in-file "
 #+begin_src emacs-lisp :var a=2
 2;;
 #+end_src"
-    (org-babel-next-src-block)
-    (org-babel-execute-maybe)
-    (re-search-forward "results" nil t)
-    (forward-line)
-    (should (string=
-	     ": 2"
-	     (buffer-substring-no-properties (point-at-bol) (point-at-eol))))))
+	      (org-babel-next-src-block)
+	      (org-babel-execute-maybe)
+	      (re-search-forward "results" nil t)
+	      (buffer-substring-no-properties (line-beginning-position 2)
+					      (line-end-position 2))))))
 
 (provide 'test-ob-emacs-lisp)
 

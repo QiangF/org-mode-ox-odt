@@ -1,6 +1,6 @@
 ;;; org-mouse.el --- Better mouse support for Org -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2006-2017 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2018 Free Software Foundation, Inc.
 
 ;; Author: Piotr Zielinski <piotr dot zielinski at gmail dot com>
 ;; Maintainer: Carsten Dominik <carsten at orgmode dot org>
@@ -18,13 +18,13 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 ;;
 ;; Org-mouse provides mouse support for org-mode.
 ;;
-;; http://orgmode.org
+;; https://orgmode.org
 ;;
 ;; Org mouse implements the following features:
 ;; * following links with the left mouse button
@@ -1043,21 +1043,21 @@ This means, between the beginning of line and the point."
 		     org-agenda-undo-list)]
 	 ["Rebuild Buffer" org-agenda-redo t]
 	 ["New Diary Entry"
-	  org-agenda-diary-entry (org-agenda-check-type nil 'agenda 'timeline) t]
+	  org-agenda-diary-entry (org-agenda-check-type nil 'agenda) t]
 	 "--"
 	 ["Goto Today" org-agenda-goto-today
-	  (org-agenda-check-type nil 'agenda 'timeline) t]
+	  (org-agenda-check-type nil 'agenda) t]
 	 ["Display Calendar" org-agenda-goto-calendar
-	  (org-agenda-check-type nil 'agenda 'timeline) t]
+	  (org-agenda-check-type nil 'agenda) t]
 	 ("Calendar Commands"
 	  ["Phases of the Moon" org-agenda-phases-of-moon
-	   (org-agenda-check-type nil 'agenda 'timeline)]
+	   (org-agenda-check-type nil 'agenda)]
 	  ["Sunrise/Sunset" org-agenda-sunrise-sunset
-	   (org-agenda-check-type nil 'agenda 'timeline)]
+	   (org-agenda-check-type nil 'agenda)]
 	  ["Holidays" org-agenda-holidays
-	   (org-agenda-check-type nil 'agenda 'timeline)]
+	   (org-agenda-check-type nil 'agenda)]
 	  ["Convert" org-agenda-convert-date
-	   (org-agenda-check-type nil 'agenda 'timeline)]
+	   (org-agenda-check-type nil 'agenda)]
 	  "--"
 	  ["Create iCalendar file" org-icalendar-combine-agenda-files t])
 	 "--"
@@ -1070,7 +1070,7 @@ This means, between the beginning of line and the point."
 	 "--"
 	 ["Show Logbook entries" org-agenda-log-mode
 	  :style toggle :selected org-agenda-show-log
-	  :active (org-agenda-check-type nil 'agenda 'timeline)]
+	  :active (org-agenda-check-type nil 'agenda)]
 	 ["Include Diary" org-agenda-toggle-diary
 	  :style toggle :selected org-agenda-include-diary
 	  :active (org-agenda-check-type nil 'agenda)]

@@ -1,11 +1,11 @@
 ;;; ob-core.el --- Working with Code Blocks          -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009-2017 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2018 Free Software Foundation, Inc.
 
 ;; Authors: Eric Schulte
 ;;	Dan Davison
 ;; Keywords: literate programming, reproducible research
-;; Homepage: http://orgmode.org
+;; Homepage: https://orgmode.org
 
 ;; This file is part of GNU Emacs.
 
@@ -20,7 +20,7 @@
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Code:
 (require 'cl-lib)
@@ -74,7 +74,6 @@
 (declare-function org-mark-ring-push "org" (&optional pos buffer))
 (declare-function org-narrow-to-subtree "org" ())
 (declare-function org-next-block "org" (arg &optional backward block-regexp))
-(declare-function org-number-sequence "org-compat" (from &optional to inc))
 (declare-function org-open-at-point "org" (&optional in-emacs reference-buffer))
 (declare-function org-outline-overlay-data "org" (&optional use-markers))
 (declare-function org-previous-block "org" (arg &optional block-regexp))
@@ -82,8 +81,7 @@
 (declare-function org-reverse-string "org" (string))
 (declare-function org-set-outline-overlay-data "org" (data))
 (declare-function org-show-context "org" (&optional key))
-(declare-function org-split-string "org" (string &optional separators))
-(declare-function org-src-coderef-format "org-src" (element))
+(declare-function org-src-coderef-format "org-src" (&optional element))
 (declare-function org-src-coderef-regexp "org-src" (fmt &optional label))
 (declare-function org-table-align "org-table" ())
 (declare-function org-table-end "org-table" (&optional table-type))
@@ -242,11 +240,9 @@ should be asked whether to allow evaluation."
 	 (query (or (equal eval "query")
 		    (and export (equal eval "query-export"))
 		    (if (functionp org-confirm-babel-evaluate)
-			(save-excursion
-			  (goto-char (nth 5 info))
-			  (funcall org-confirm-babel-evaluate
-				   ;; language, code block body
-				   (nth 0 info) (nth 1 info)))
+			(funcall org-confirm-babel-evaluate
+				 ;; Language, code block body.
+				 (nth 0 info) (nth 1 info))
 		      org-confirm-babel-evaluate))))
     (cond
      (noeval nil)
@@ -367,7 +363,7 @@ a window into the `org-babel-get-src-block-info' function."
 ;;;###autoload
 (defun org-babel-expand-src-block-maybe ()
   "Conditionally expand a source block.
-Detect if this is context for a org-babel src-block and if so
+Detect if this is context for an org-babel src-block and if so
 then run `org-babel-expand-src-block'."
   (interactive)
   (org-babel-when-in-src-block
@@ -376,7 +372,7 @@ then run `org-babel-expand-src-block'."
 ;;;###autoload
 (defun org-babel-load-in-session-maybe ()
   "Conditionally load a source block in a session.
-Detect if this is context for a org-babel src-block and if so
+Detect if this is context for an org-babel src-block and if so
 then run `org-babel-load-in-session'."
   (interactive)
   (org-babel-when-in-src-block
@@ -387,7 +383,7 @@ then run `org-babel-load-in-session'."
 ;;;###autoload
 (defun org-babel-pop-to-session-maybe ()
   "Conditionally pop to a session.
-Detect if this is context for a org-babel src-block and if so
+Detect if this is context for an org-babel src-block and if so
 then run `org-babel-switch-to-session'."
   (interactive)
   (org-babel-when-in-src-block
@@ -984,13 +980,24 @@ with a prefix argument then this is passed on to
 (defmacro org-babel-do-in-edit-buffer (&rest body)
   "Evaluate BODY in edit buffer if there is a code block at point.
 Return t if a code block was found at point, nil otherwise."
-  `(let ((org-src-window-setup 'switch-invisibly))
-     (when (and (org-babel-where-is-src-block-head)
+  (declare (debug (body)))
+  `(let* ((element (org-element-at-point))
+	  ;; This function is not supposed to move point.  However,
+	  ;; `org-edit-src-code' always moves point back into the
+	  ;; source block.  It is problematic if the point was before
+	  ;; the code, e.g., on block's opening line.  In this case,
+	  ;; we want to restore this location after executing BODY.
+	  (outside-position
+	   (and (<= (line-beginning-position)
+		    (org-element-property :post-affiliated element))
+		(point-marker)))
+	  (org-src-window-setup 'switch-invisibly))
+     (when (and (org-babel-where-is-src-block-head element)
 		(org-edit-src-code))
        (unwind-protect (progn ,@body)
-	 (org-edit-src-exit))
+	 (org-edit-src-exit)
+	 (when outside-position (goto-char outside-position)))
        t)))
-(def-edebug-spec org-babel-do-in-edit-buffer (body))
 
 (defun org-babel-do-key-sequence-in-edit-buffer (key)
   "Read key sequence and execute the command in edit buffer.
@@ -1760,19 +1767,25 @@ NAME, or nil if no such block exists.  Set match data according
 to `org-babel-named-src-block-regexp'."
   (save-excursion
     (goto-char (point-min))
-    (ignore-errors
-      (org-next-block 1 nil (org-babel-named-src-block-regexp-for-name name)))))
+    (let ((regexp (org-babel-named-src-block-regexp-for-name name)))
+      (or (and (looking-at regexp)
+	       (progn (goto-char (match-beginning 1))
+		      (line-beginning-position)))
+	  (ignore-errors (org-next-block 1 nil regexp))))))
 
 (defun org-babel-src-block-names (&optional file)
   "Returns the names of source blocks in FILE or the current buffer."
-  (when file (find-file file))
-  (save-excursion
-    (goto-char (point-min))
-    (let ((re (org-babel-named-src-block-regexp-for-name))
-	  names)
-      (while (ignore-errors (org-next-block 1 nil re))
-	(push (match-string-no-properties 9) names))
-      names)))
+  (with-current-buffer (if file (find-file-noselect file) (current-buffer))
+    (org-with-point-at 1
+      (let ((regexp "^[ \t]*#\\+begin_src ")
+	    (case-fold-search t)
+	    (names nil))
+	(while (re-search-forward regexp nil t)
+	  (let ((element (org-element-at-point)))
+	    (when (eq 'src-block (org-element-type element))
+	      (let ((name (org-element-property :name element)))
+		(when name (push name names))))))
+	names))))
 
 ;;;###autoload
 (defun org-babel-goto-named-result (name)
@@ -2277,21 +2290,22 @@ INFO may provide the values of these header arguments (in the
 		 ((member "prepend" result-params))) ; already there
 		(setq results-switches
 		      (if results-switches (concat " " results-switches) ""))
-		(let ((wrap (lambda (start finish &optional no-escape no-newlines
-				      inline-start inline-finish)
-			      (when inline
-				(setq start inline-start)
-				(setq finish inline-finish)
-				(setq no-newlines t))
-			      (goto-char end)
-			      (insert (concat finish (unless no-newlines "\n")))
-			      (goto-char beg)
-			      (insert (concat start (unless no-newlines "\n")))
-			      (unless no-escape
-				(org-escape-code-in-region (min (point) end) end))
-			      (goto-char end)
-			      (unless no-newlines (goto-char (point-at-eol)))
-			      (setq end (point-marker))))
+		(let ((wrap
+		       (lambda (start finish &optional no-escape no-newlines
+				 inline-start inline-finish)
+			 (when inline
+			   (setq start inline-start)
+			   (setq finish inline-finish)
+			   (setq no-newlines t))
+			 (let ((before-finish (marker-position end)))
+			   (goto-char end)
+			   (insert (concat finish (unless no-newlines "\n")))
+			   (goto-char beg)
+			   (insert (concat start (unless no-newlines "\n")))
+			   (unless no-escape
+			     (org-escape-code-in-region
+			      (min (point) before-finish) before-finish))
+			   (goto-char end))))
 		      (tabulablep
 		       (lambda (r)
 			 ;; Non-nil when result R can be turned into
@@ -2345,13 +2359,13 @@ INFO may provide the values of these header arguments (in the
 		    (insert (org-macro-escape-arguments
 			     (org-babel-chomp result "\n"))))
 		   (t (goto-char beg) (insert result)))
-		  (setq end (point-marker))
+		  (setq end (copy-marker (point) t))
 		  ;; possibly wrap result
 		  (cond
 		   ((assq :wrap (nth 2 info))
 		    (let ((name (or (cdr (assq :wrap (nth 2 info))) "RESULTS")))
 		      (funcall wrap (concat "#+BEGIN_" name)
-			       (concat "#+END_" (car (org-split-string name)))
+			       (concat "#+END_" (car (split-string name)))
 			       nil nil (concat "{{{results(@@" name ":") "@@)}}}")))
 		   ((member "html" result-params)
 		    (funcall wrap "#+BEGIN_EXPORT html" "#+END_EXPORT" nil nil
@@ -2382,11 +2396,12 @@ INFO may provide the values of these header arguments (in the
 		   ((and (not (funcall tabulablep result))
 			 (not (member "file" result-params)))
 		    (let ((org-babel-inline-result-wrap
-			   ;; Hard code {{{results(...)}}} on top of customization.
+			   ;; Hard code {{{results(...)}}} on top of
+			   ;; customization.
 			   (format "{{{results(%s)}}}"
 				   org-babel-inline-result-wrap)))
-		      (org-babel-examplify-region beg end results-switches inline)
-		      (setq end (point))))))
+		      (org-babel-examplify-region
+		       beg end results-switches inline)))))
 		;; Possibly indent results in par with #+results line.
 		(when (and (not inline) (numberp indent) (> indent 0)
 			   ;; In this case `table-align' does the work
@@ -2399,6 +2414,7 @@ INFO may provide the values of these header arguments (in the
 			(message "Code block returned no value.")
 		      (message "Code block produced no output."))
 		  (message "Code block evaluation complete.")))
+	    (set-marker end nil)
 	    (when outside-scope (narrow-to-region visible-beg visible-end))
 	    (set-marker visible-beg nil)
 	    (set-marker visible-end nil)))))))
@@ -2412,8 +2428,11 @@ INFO may provide the values of these header arguments (in the
         (goto-char location)
 	(when (looking-at (concat org-babel-result-regexp ".*$"))
 	  (delete-region
-	   (if keep-keyword (1+ (match-end 0)) (1- (match-beginning 0)))
-	   (progn (forward-line 1) (org-babel-result-end))))))))
+	   (if keep-keyword (line-beginning-position 2)
+	     (save-excursion
+	       (skip-chars-backward " \r\t\n")
+	       (line-beginning-position 2)))
+	   (progn (forward-line) (org-babel-result-end))))))))
 
 (defun org-babel-remove-inline-result (&optional datum)
   "Remove the result of the current inline-src-block or babel call.
@@ -2450,27 +2469,24 @@ in the buffer."
 
 (defun org-babel-result-end ()
   "Return the point at the end of the current set of results."
-  (save-excursion
-    (cond
-     ((org-at-table-p) (progn (goto-char (org-table-end)) (point)))
-     ((org-at-item-p) (let* ((struct (org-list-struct))
-			     (prvs (org-list-prevs-alist struct)))
-			(org-list-get-list-end (point-at-bol) struct prvs)))
-     ((let ((case-fold-search t)) (looking-at "^\\([ \t]*\\):results:"))
-      (progn (re-search-forward (concat "^" (match-string 1) ":END:"))
-	     (forward-char 1) (point)))
-     (t
-      (let ((case-fold-search t))
-	(if (looking-at (concat "[ \t]*#\\+begin_\\([^ \t\n\r]+\\)"))
-	    (progn (re-search-forward (concat "[ \t]*#\\+end_" (match-string 1))
-				      nil t)
-		   (forward-char 1))
-	  (while (looking-at "[ \t]*\\(: \\|:$\\|\\[\\[\\)")
-	    (forward-line 1))))
-      (point)))))
+  (cond ((looking-at-p "^[ \t]*$") (point)) ;no result
+	((looking-at-p (format "^[ \t]*%s[ \t]*$" org-bracket-link-regexp))
+	 (line-beginning-position 2))
+	(t
+	 (let ((element (org-element-at-point)))
+	   (if (memq (org-element-type element)
+		     ;; Possible results types.
+		     '(drawer example-block export-block fixed-width item
+			      plain-list src-block table))
+	       (save-excursion
+		 (goto-char (min (point-max) ;for narrowed buffers
+				 (org-element-property :end element)))
+		 (skip-chars-backward " \r\t\n")
+		 (line-beginning-position 2))
+	     (point))))))
 
 (defun org-babel-result-to-file (result &optional description)
-  "Convert RESULT into an `org-mode' link with optional DESCRIPTION.
+  "Convert RESULT into an Org link with optional DESCRIPTION.
 If the `default-directory' is different from the containing
 file's directory then expand relative links."
   (when (stringp result)
@@ -2755,22 +2771,27 @@ block but are passed literally to the \"example-block\"."
                       (if org-babel-use-quick-and-dirty-noweb-expansion
                           (while (re-search-forward rx nil t)
                             (let* ((i (org-babel-get-src-block-info 'light))
-                                   (body (org-babel-expand-noweb-references i))
+                                   (body (if (org-babel-noweb-p (nth 2 i) :eval)
+					     (org-babel-expand-noweb-references i)
+					   (nth 1 i)))
                                    (sep (or (cdr (assq :noweb-sep (nth 2 i)))
                                             "\n"))
                                    (full (if comment
                                              (let ((cs (org-babel-tangle-comment-links i)))
-                                                (concat (funcall c-wrap (car cs)) "\n"
-                                                        body "\n"
-                                                        (funcall c-wrap (cadr cs))))
+					       (concat (funcall c-wrap (car cs)) "\n"
+						       body "\n"
+						       (funcall c-wrap (cadr cs))))
                                            body)))
                               (setq expansion (cons sep (cons full expansion)))))
                         (org-babel-map-src-blocks nil
-			  (let ((i (org-babel-get-src-block-info 'light)))
+			  (let ((i (let ((org-babel-current-src-block-location (point)))
+				     (org-babel-get-src-block-info 'light))))
                             (when (equal (or (cdr (assq :noweb-ref (nth 2 i)))
                                              (nth 4 i))
                                          source-name)
-                              (let* ((body (org-babel-expand-noweb-references i))
+                              (let* ((body (if (org-babel-noweb-p (nth 2 i) :eval)
+					       (org-babel-expand-noweb-references i)
+					     (nth 1 i)))
                                      (sep (or (cdr (assq :noweb-sep (nth 2 i)))
                                               "\n"))
                                      (full (if comment
